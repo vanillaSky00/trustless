@@ -149,6 +149,9 @@ Imbalance ratio: **84:1** (NORMAL vs EXTREME_LATE_NIGHT).
 
 This is **not** a flaw in the dataset — it's a faithful reproduction of real ZTA telemetry, where the events that matter most for security are the rarest by definition.
 
+### Training dynamics
+![Loss curve](assets/photos/loss_curve.png)
+
 ### Two rounds, one variable changed
 
 I ran the SFT twice with identical configs. The only difference was the `instruction` text inside each training example:
