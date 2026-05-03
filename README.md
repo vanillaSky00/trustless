@@ -2,7 +2,13 @@
 
 # 🛡️ trustless
 
+**This is a vibe learning ZTA implementation combined with an AI (ML/LLM) repo.**
+
+> **⚠️ Disclaimer** <br>
+> This repository contains experimental code integrating Zero Trust Architecture with AI/LLMs. It is provided "as is" without warranty of any kind. Do not deploy this in a production environment or rely on it for critical security infrastructure. The authors assume no liability for data loss, security breaches, or unexpected AI behaviors.
+
 **Behavioral baselines for Zero Trust Architecture, learned from data.**
+
 
 [![Python](https://img.shields.io/badge/python-3.11+-3776ab?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![RAPIDS](https://img.shields.io/badge/GPU-RAPIDS_cuML-76b900?style=flat-square&logo=nvidia&logoColor=white)](https://rapids.ai)
