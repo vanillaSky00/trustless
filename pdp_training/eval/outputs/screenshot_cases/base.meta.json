@@ -1,0 +1,8 @@
+{
+  "run_name": "base",
+  "benchmark": "screenshot_cases",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "adapter": null,
+  "num_examples": 5,
+  "elapsed_seconds": 7.106048822402954
+}

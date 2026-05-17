@@ -1,0 +1,8 @@
+{
+  "run_name": "B_r32_a64_lr2e4",
+  "benchmark": "core_balanced",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "adapter": "/LLaMA-Factory/finetuing_models/qwen2.5_7b_ztn_r32_a64_lr2e4",
+  "num_examples": 100,
+  "elapsed_seconds": 268.49076890945435
+}

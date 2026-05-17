@@ -1,0 +1,8 @@
+{
+  "run_name": "A_r8_a16_lr2e4",
+  "benchmark": "screenshot_cases",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "adapter": "/LLaMA-Factory/finetuing_models/qwen2.5_7b_ztn_r8_a16_lr2e4",
+  "num_examples": 5,
+  "elapsed_seconds": 14.516967296600342
+}

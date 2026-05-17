@@ -1,0 +1,8 @@
+{
+  "run_name": "base",
+  "benchmark": "rare_stress",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "adapter": null,
+  "num_examples": 35,
+  "elapsed_seconds": 46.74290418624878
+}

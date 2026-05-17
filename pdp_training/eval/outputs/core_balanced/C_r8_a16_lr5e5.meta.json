@@ -1,0 +1,8 @@
+{
+  "run_name": "C_r8_a16_lr5e5",
+  "benchmark": "core_balanced",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "adapter": "/LLaMA-Factory/finetuing_models/qwen2.5_7b_ztn_r8_a16_lr5e5",
+  "num_examples": 100,
+  "elapsed_seconds": 264.1033658981323
+}

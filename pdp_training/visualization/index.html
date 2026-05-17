@@ -1,0 +1,913 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LoRA Fine-Tuning a Zero-Trust PDP — Qwen2.5-7B</title>
+<style>
+  /* ---------- tokens ---------- */
+  :root {
+    --bg:        #0a0b0e;
+    --bg-1:      #0f1115;
+    --bg-2:      #14171d;
+    --bg-3:      #1a1e26;
+    --line:      #232832;
+    --line-2:    #2c333f;
+    --text:      #e6e8ec;
+    --text-dim:  #9aa3b2;
+    --text-mute: #6b7382;
+
+    --accent:    #7c9cff;       /* run A */
+    --accent-2:  #f0b86e;       /* run B */
+    --accent-3:  #ff7a7a;       /* run C */
+    --accent-4:  #5a6373;       /* base  */
+    --good:      #4ade80;
+    --warn:      #facc15;
+    --bad:       #ef4444;
+    --crit:      #f472b6;
+
+    --radius:    14px;
+    --radius-sm: 8px;
+
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  }
+
+  /* ---------- reset ---------- */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+  h1 { font-size: 36px; margin: 0 0 12px; letter-spacing: -0.02em; }
+  h2 { font-size: 24px; margin: 64px 0 18px; }
+  h3 { font-size: 18px; margin: 32px 0 10px; }
+  h4 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; }
+  p  { margin: 0 0 14px; color: var(--text); }
+  code, .mono { font-family: var(--mono); font-size: 0.92em; }
+  code { background: var(--bg-2); padding: 1px 6px; border-radius: 4px; color: #cdd6e4; border: 1px solid var(--line); }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 48px 0; }
+
+  /* ---------- layout ---------- */
+  .shell { max-width: 1240px; margin: 0 auto; padding: 64px 28px 120px; }
+  .grid { display: grid; gap: 18px; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid-4 { grid-template-columns: repeat(4, 1fr); }
+  .grid-5 { grid-template-columns: repeat(5, 1fr); }
+  @media (max-width: 960px) {
+    .grid-3, .grid-4, .grid-5 { grid-template-columns: repeat(2, 1fr); }
+    .grid-2 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .grid-3, .grid-4, .grid-5 { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- header ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(10,11,14,0.72);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 28px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .topbar .brand { font-weight: 600; letter-spacing: -0.01em; font-size: 14px; }
+  .topbar .brand span { color: var(--text-mute); margin-left: 8px; font-weight: 400; }
+  .topbar nav { display: flex; gap: 18px; font-size: 13px; color: var(--text-dim); }
+  .topbar nav a { color: var(--text-dim); }
+  .topbar nav a:hover { color: var(--text); text-decoration: none; }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 28px 0 8px; }
+  .eyebrow {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    border: 1px solid var(--line);
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 18px;
+  }
+  .lede { font-size: 18px; color: var(--text-dim); max-width: 760px; }
+  .meta { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 24px; color: var(--text-mute); font-size: 13px; }
+  .meta b { color: var(--text-dim); font-weight: 500; }
+
+  /* ---------- card ---------- */
+  .card {
+    background: var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .card.tight { padding: 16px; }
+  .card h3 { margin-top: 0; }
+  .card .sub { font-size: 13px; color: var(--text-mute); margin-top: -6px; margin-bottom: 14px; }
+
+  /* ---------- KPI tile ---------- */
+  .kpi { display: flex; flex-direction: column; gap: 6px; }
+  .kpi .label { font-size: 12px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.08em; }
+  .kpi .value { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .kpi .value .unit { font-size: 14px; color: var(--text-mute); margin-left: 4px; font-weight: 400; }
+  .kpi .delta { font-size: 12px; color: var(--text-mute); font-family: var(--mono); }
+  .kpi .delta.up   { color: var(--good); }
+  .kpi .delta.down { color: var(--bad); }
+
+  /* ---------- run chips ---------- */
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 6px; font-size: 12px; font-family: var(--mono); border: 1px solid var(--line); }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .chip-base   .dot { background: var(--accent-4); } .chip-base   { color: #cbd0d8; }
+  .chip-A      .dot { background: var(--accent);   } .chip-A      { color: #c4d1ff; }
+  .chip-B      .dot { background: var(--accent-2); } .chip-B      { color: #ffd9a8; }
+  .chip-C      .dot { background: var(--accent-3); } .chip-C      { color: #ffc1c1; }
+
+  /* ---------- table ---------- */
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { font-weight: 500; color: var(--text-mute); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  tbody tr:hover { background: var(--bg-2); }
+  td .bar {
+    display: inline-block; height: 4px; vertical-align: middle; border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2)); margin-left: 8px;
+  }
+
+  /* ---------- schema strip (Layer 1 compact widget) ---------- */
+  .schema-strip {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 28px;
+    align-items: center;
+    border-left: 2px solid var(--good);
+    background:
+      radial-gradient(600px 120px at 0% 0%, rgba(74,222,128,0.06), transparent 70%),
+      var(--bg-1);
+  }
+  .schema-left .schema-eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--good);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .schema-left .schema-headline {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+  .schema-left .schema-sub {
+    color: var(--text-dim);
+    font-size: 14px;
+    margin: 0;
+  }
+  .schema-right {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .schema-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+  }
+  .schema-pill .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-mute);
+  }
+  .schema-pill .dot.good { background: var(--good); }
+  @media (max-width: 760px) {
+    .schema-strip { grid-template-columns: 1fr; }
+    .schema-right { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- figure images ---------- */
+  .fig {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+  }
+  .cm-fig {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+  }
+  .cm-card {
+    padding: 14px;
+  }
+  .cm-card .cm-card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .cm-card .cm-card-head h4 {
+    margin: 0; text-transform: none; letter-spacing: -0.01em; color: var(--text); font-size: 15px;
+  }
+
+  /* ---------- callout ---------- */
+  .callout {
+    border-left: 2px solid var(--accent);
+    background: linear-gradient(90deg, rgba(124,156,255,0.06), transparent 60%);
+    padding: 14px 18px;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    margin: 18px 0;
+    color: var(--text-dim);
+  }
+  .callout.warn  { border-color: var(--warn); background: linear-gradient(90deg, rgba(250,204,21,0.06), transparent 60%); }
+  .callout.bad   { border-color: var(--bad);  background: linear-gradient(90deg, rgba(239,68,68,0.06), transparent 60%); }
+  .callout.good  { border-color: var(--good); background: linear-gradient(90deg, rgba(74,222,128,0.06), transparent 60%); }
+  .callout p { color: var(--text); margin: 0; }
+  .callout .tag { font-size: 11px; font-family: var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-mute); display: block; margin-bottom: 4px; }
+
+  /* ---------- analogy box ---------- */
+  .analogy {
+    background:
+      radial-gradient(1200px 200px at 30% -10%, rgba(124,156,255,0.08), transparent 70%),
+      var(--bg-1);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+  }
+  .analogy .icon {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .analogy h4 { color: var(--text); margin: 0 0 8px; text-transform: none; letter-spacing: -0.01em; font-size: 17px; font-weight: 600; }
+
+  /* ---------- bench tabs ---------- */
+  .tabs { display: inline-flex; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 4px; gap: 2px; }
+  .tabs button {
+    background: transparent; color: var(--text-dim);
+    border: 0; padding: 8px 14px; border-radius: 7px; cursor: pointer;
+    font-family: var(--sans); font-size: 13px;
+  }
+  .tabs button.active { background: var(--bg-3); color: var(--text); }
+  .tabs button:hover:not(.active) { color: var(--text); }
+
+  .footer { color: var(--text-mute); font-size: 12px; padding-top: 40px; border-top: 1px solid var(--line); margin-top: 64px; }
+
+  /* nice scrollbar in dark */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a414f; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">PDP · Zero-Trust LoRA Study <span>Qwen2.5-7B-Instruct</span></div>
+  <nav>
+    <a href="#setup">Setup</a>
+    <a href="#what">What we compare</a>
+    <a href="#schema">Schema</a>
+    <a href="#classification">Classification</a>
+    <a href="#safety">Safety</a>
+    <a href="#confusion">Confusion</a>
+    <a href="#takeaways">Takeaways</a>
+  </nav>
+</header>
+
+<main class="shell">
+
+  <!-- ============== HERO ============== -->
+  <section class="hero">
+    <span class="eyebrow">Fine-Tuning Study · 2026</span>
+    <h1>Teaching a 7B model to be a Zero-Trust Policy Decision Point</h1>
+    <p class="lede">
+      We fine-tuned Qwen2.5-7B-Instruct with three different LoRA configurations to turn behavioral telemetry
+      into strict JSON security verdicts. This page walks through what we trained, what we compared,
+      and what the numbers actually mean — including the part where bigger isn't better.
+    </p>
+    <div class="meta">
+      <div><b>Base model</b> · Qwen2.5-7B-Instruct</div>
+      <div><b>Method</b> · LoRA SFT via LLaMA-Factory</div>
+      <div><b>Training corpus</b> · 3,000 user-day records, 5 classes (84:1 imbalance)</div>
+      <div><b>Eval</b> · 100 + 35 + 5 examples across 3 benchmarks</div>
+    </div>
+  </section>
+
+  <!-- ============== KPI BAND ============== -->
+  <section style="margin-top: 40px;">
+    <div class="grid grid-4">
+      <div class="card kpi">
+        <div class="label">Schema compliance</div>
+        <div class="value">100<span class="unit">% all runs</span></div>
+        <div class="delta">JSON validity · enum check · field set</div>
+      </div>
+      <div class="card kpi">
+        <div class="label">Best anomaly accuracy</div>
+        <div class="value">71<span class="unit">% — Run A</span></div>
+        <div class="delta up">+31 pts vs base (40%)</div>
+      </div>
+      <div class="card kpi">
+        <div class="label">Best EXTREME recall</div>
+        <div class="value">95<span class="unit">% — Run C</span></div>
+        <div class="delta up">+95 pts vs base (0%)</div>
+      </div>
+      <div class="card kpi">
+        <div class="label">Severe FN — base model</div>
+        <div class="value">100<span class="unit">% on core</span></div>
+        <div class="delta down">Untuned model misses every severe case</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== SETUP ============== -->
+  <section id="setup">
+    <h2>The setup</h2>
+    <p>
+      A Zero-Trust Policy Decision Point (PDP) doesn't ask "is this password right?" — it asks
+      "given <i>who</i> this user is, <i>where</i> they're working from, <i>when</i> they're active, and
+      <i>how</i> they normally behave, should this session be allowed?" The model's job is to read
+      one row of behavioral telemetry and emit a structured verdict.
+    </p>
+
+    <div class="grid grid-2" style="margin: 20px 0;">
+      <div class="card">
+        <h4 style="margin-top:0">Input — one user-day record</h4>
+        <pre class="mono" style="color:#cdd6e4; background:var(--bg-2); padding:14px; border-radius:8px; border:1px solid var(--line); overflow-x:auto; font-size:12.5px; margin:0;">User: EPI3052 | Day: 2010-03-01
+Logons: 6 | Distinct PCs: 6
+After-hours events: 10
+Weekend events: 0
+First hour: 2 | Last hour: 23
+Hour span: 21</pre>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">Required output — strict JSON</h4>
+        <pre class="mono" style="color:#cdd6e4; background:var(--bg-2); padding:14px; border-radius:8px; border:1px solid var(--line); overflow-x:auto; font-size:12.5px; margin:0;">{
+  "risk_level": "CRITICAL",
+  "anomaly_type": "EXTREME_LATE_NIGHT",
+  "device_trust": "UNMANAGED",
+  "recommended_action": "BLOCK_AND_ALERT",
+  "confidence": 0.94,
+  "rationale": "…"
+}</pre>
+      </div>
+    </div>
+
+    <div class="analogy">
+      <div class="icon">Analogy · the night-shift security guard</div>
+      <h4>Why this is hard for a base LLM</h4>
+      <p style="margin:0; color:var(--text-dim);">
+        A base Qwen model is a generalist — like a brand-new security guard on day one. Ask "is this person suspicious?"
+        and you'll get a thoughtful paragraph. But a real SOC pipeline doesn't read paragraphs;
+        it reads forms. Fine-tuning is the part where the guard learns the company's exact intake form
+        and exact escalation vocabulary — <code>BLOCK_AND_ALERT</code>, not "you should probably block this and alert someone."
+      </p>
+    </div>
+
+    <h3>The training corpus is deliberately imbalanced</h3>
+    <p>
+      Real Zero-Trust telemetry is imbalanced by physics, not by accident: the events that
+      <i>matter most</i> for security are the rarest. We faithfully reproduced that imbalance
+      in the training set so the experiment exposes the real failure mode — not a sanitized one.
+    </p>
+
+    <div class="card" style="margin: 14px 0 20px;">
+      <table>
+        <thead>
+          <tr>
+            <th>Class</th>
+            <th class="num">Train examples</th>
+            <th class="num">Share</th>
+            <th>Role</th>
+            <th>Distribution</th>
+          </tr>
+        </thead>
+        <tbody id="corpus-table"></tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <span class="tag">Caveat</span>
+      <p>The evaluation benchmarks were re-sampled from the <i>same</i> source file used for training
+      (<code>ztn_sft.json</code>). So this is an internal, repeatable comparison across LoRA configs —
+      not a fully held-out generalization test. The relative comparisons are valid; absolute numbers are
+      optimistic.</p>
+    </div>
+  </section>
+
+  <!-- ============== WHAT WE COMPARE ============== -->
+  <section id="what">
+    <h2>What we're comparing</h2>
+    <p>
+      Four models. One variable changed at a time. Same prompts, same decoding (<code>temperature=0</code>),
+      same JSON schema validator. Comparing four LoRA configurations the way a chef compares four
+      pinches of salt in the same soup recipe.
+    </p>
+
+    <div class="grid grid-4" style="margin-top: 16px;">
+      <div class="card">
+        <div class="chip chip-base"><span class="dot"></span>BASE</div>
+        <h3 style="margin: 12px 0 6px;">No fine-tuning</h3>
+        <div class="sub">The generalist Qwen, untouched</div>
+        <table style="margin-top: 8px;">
+          <tr><td>LoRA rank</td><td class="num">—</td></tr>
+          <tr><td>LoRA alpha</td><td class="num">—</td></tr>
+          <tr><td>Learning rate</td><td class="num">—</td></tr>
+        </table>
+        <p style="font-size: 13px; color: var(--text-dim); margin-top: 14px; margin-bottom:0;">
+          Reference point. Tells us how much fine-tuning is even doing.
+        </p>
+      </div>
+      <div class="card">
+        <div class="chip chip-A"><span class="dot"></span>RUN A · baseline</div>
+        <h3 style="margin: 12px 0 6px;">r=8, α=16, lr=2e-4</h3>
+        <div class="sub">Conservative LoRA, normal LR</div>
+        <table style="margin-top: 8px;">
+          <tr><td>LoRA rank</td><td class="num">8</td></tr>
+          <tr><td>LoRA alpha</td><td class="num">16</td></tr>
+          <tr><td>Learning rate</td><td class="num">2e-4</td></tr>
+        </table>
+        <p style="font-size: 13px; color: var(--text-dim); margin-top: 14px; margin-bottom:0;">
+          The default that most LoRA tutorials would recommend.
+        </p>
+      </div>
+      <div class="card">
+        <div class="chip chip-B"><span class="dot"></span>RUN B · more capacity</div>
+        <h3 style="margin: 12px 0 6px;">r=32, α=64, lr=2e-4</h3>
+        <div class="sub">4× the adapter size, same scale</div>
+        <table style="margin-top: 8px;">
+          <tr><td>LoRA rank</td><td class="num">32</td></tr>
+          <tr><td>LoRA alpha</td><td class="num">64</td></tr>
+          <tr><td>Learning rate</td><td class="num">2e-4</td></tr>
+        </table>
+        <p style="font-size: 13px; color: var(--text-dim); margin-top: 14px; margin-bottom:0;">
+          Tests the "give it more capacity" hypothesis for rare classes.
+        </p>
+      </div>
+      <div class="card">
+        <div class="chip chip-C"><span class="dot"></span>RUN C · slower</div>
+        <h3 style="margin: 12px 0 6px;">r=8, α=16, lr=5e-5</h3>
+        <div class="sub">Same size, 4× slower learning</div>
+        <table style="margin-top: 8px;">
+          <tr><td>LoRA rank</td><td class="num">8</td></tr>
+          <tr><td>LoRA alpha</td><td class="num">16</td></tr>
+          <tr><td>Learning rate</td><td class="num">5e-5</td></tr>
+        </table>
+        <p style="font-size: 13px; color: var(--text-dim); margin-top: 14px; margin-bottom:0;">
+          Tests whether slower learning yields a smoother decision boundary.
+        </p>
+      </div>
+    </div>
+
+    <div class="analogy" style="margin-top: 22px;">
+      <div class="icon">Analogy · LoRA in one paragraph</div>
+      <h4>What does "rank 8 vs rank 32" actually mean?</h4>
+      <p style="margin:0; color:var(--text-dim);">
+        Think of the base model as a giant brick wall. Full fine-tuning would repaint every brick — expensive
+        and risky. LoRA instead glues a thin removable panel over the wall and only paints the panel.
+        The <i>rank</i> is the thickness of that panel: rank 8 is a sheet of paper, rank 32 is a poster board.
+        A thicker panel can hold more new patterns — but a thicker panel can also <i>overwrite</i> the
+        underlying wall more aggressively. Run B tests whether thicker is better; Run C tests whether
+        painting more slowly is.
+      </p>
+    </div>
+
+    <h3>Three benchmark slices, three questions</h3>
+    <div class="grid grid-3">
+      <div class="card">
+        <h4 style="margin-top:0">core_balanced · 100 ex</h4>
+        <p style="margin:0; color: var(--text-dim); font-size: 14px;">
+          20 examples per class. The "ordinary performance" benchmark. Macro-F1 here is meaningful
+          because every class has equal support.
+        </p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">rare_stress · 35 ex</h4>
+        <p style="margin:0; color: var(--text-dim); font-size: 14px;">
+          Only the three rare classes (15 MULTI_PC, 15 WEEKEND_BURST, 5 EXTREME). The
+          security-critical benchmark — does fine-tuning catch the events that matter?
+        </p>
+      </div>
+      <div class="card">
+        <h4 style="margin-top:0">screenshot_cases · 5 ex</h4>
+        <p style="margin:0; color: var(--text-dim); font-size: 14px;">
+          One example per class, hand-picked. Too small for statistics, useful for qualitative
+          inspection and report screenshots.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== BENCHMARK PICKER ============== -->
+  <section>
+    <h2>The numbers — pick a benchmark</h2>
+    <p>
+      The classification and safety charts below respond to this selector. (Schema quality is the
+      same across all benchmarks — see the strip widget at the top of this section.) Benchmarks
+      behave differently, and that's the point: a model can ace the balanced benchmark and fail the
+      rare-stress one.
+    </p>
+    <div class="tabs" id="bench-tabs" style="margin: 6px 0 22px;">
+      <button class="active" data-bench="core_balanced">core_balanced (100)</button>
+      <button data-bench="rare_stress">rare_stress (35)</button>
+      <button data-bench="screenshot_cases">screenshot_cases (5)</button>
+    </div>
+
+    <!-- ============== SCHEMA — compact widget ============== -->
+    <div class="card schema-strip" id="schema">
+      <div class="schema-left">
+        <div class="schema-eyebrow">Layer 1 · Schema quality</div>
+        <div class="schema-headline">100% across the board</div>
+        <div class="schema-sub">
+          Every run (Base, A, B, C) on every benchmark emitted valid JSON with the exact required
+          field set and only allowed enum values. The "speak JSON" problem is solved — the
+          interesting story lives in the next two layers.
+        </div>
+      </div>
+      <div class="schema-right">
+        <div class="schema-pill"><span class="dot good"></span>JSON validity · 100%</div>
+        <div class="schema-pill"><span class="dot good"></span>Exact field set · 100%</div>
+        <div class="schema-pill"><span class="dot good"></span>Enum compliance · 100%</div>
+        <div class="schema-pill"><span class="dot good"></span>Hallucinated enum · 0%</div>
+      </div>
+    </div>
+
+    <!-- ============== CLASSIFICATION ============== -->
+    <h3 id="classification" style="margin-top:40px;">Layer 2 · Classification — is the verdict label right?</h3>
+    <p>
+      Anomaly accuracy is overall hit rate. Macro F1 punishes the model for missing rare classes.
+      Rare-recall is the average recall on the three rare classes. EXTREME recall is the single
+      most security-critical metric — did the model catch the rarest, most dangerous class?
+    </p>
+    <div class="card">
+      <img class="fig" id="fig-classification" src="figures/core_balanced_classification_quality.png" alt="Classification quality bar chart" />
+    </div>
+
+    <div class="callout good" id="callout-cls"></div>
+
+    <!-- ============== SAFETY ============== -->
+    <h3 id="safety" style="margin-top:40px;">Layer 3 · PDP safety — even when the label is wrong, is the action safe?</h3>
+    <p>
+      Here's where security diverges from classification. A model can predict the <i>wrong</i>
+      anomaly_type but still recommend the <i>right</i> action — a "label-wrong, action-safe" failure
+      is operationally fine. The opposite — predicting a safe action on a critical event — is the
+      worst possible outcome. That's the <i>severe false negative rate</i>.
+    </p>
+    <div class="card">
+      <img class="fig" id="fig-safety" src="figures/core_balanced_pdp_safety.png" alt="PDP safety bar chart" />
+    </div>
+
+    <div class="grid grid-2" style="margin-top:18px;">
+      <div class="callout bad">
+        <span class="tag">Severe FN — the worst kind of error</span>
+        <p>A true HIGH/CRITICAL event the model labels as LOW/MEDIUM risk. In a Zero-Trust pipeline,
+        this means a real intrusion gets the response of a routine low-risk logon. Base model: catastrophic.
+        Run B: zero (but pays in over-action). Run A: 15%. Run C: 20%.</p>
+      </div>
+      <div class="callout warn">
+        <span class="tag">Over-action — the friction failure</span>
+        <p>The model blocks something that shouldn't be blocked. Operationally annoying but not unsafe.
+        Run B's block-heavy behavior reaches a 30% over-action rate on core_balanced and
+        63% on rare_stress.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:40px;">Per-run summary table</h3>
+    <div class="card">
+      <table id="summary-table">
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th class="num">Anomaly acc</th>
+            <th class="num">Macro F1</th>
+            <th class="num">Rare recall</th>
+            <th class="num">EXTREME recall</th>
+            <th class="num">Action acc</th>
+            <th class="num">Severe FN</th>
+            <th class="num">Over-action</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============== CONFUSION ============== -->
+  <section id="confusion">
+    <h2>Where the predictions go wrong</h2>
+    <p>
+      A confusion matrix is a heatmap of "for ground-truth class X, what did the model actually say?"
+      The diagonal is correct. Off-diagonal cells tell you the <i>shape</i> of the failure — not just
+      that it failed, but how it failed.
+    </p>
+
+    <div class="analogy">
+      <div class="icon">Analogy · the rookie radiologist</div>
+      <h4>Reading a confusion matrix</h4>
+      <p style="margin:0; color:var(--text-dim);">
+        Imagine grading a rookie radiologist on 100 X-rays. The diagonal is "they got it right."
+        But if every <i>broken rib</i> they read as a <i>bruise</i>, the off-diagonal cell at
+        (rib → bruise) lights up. That's not a "they're 40% accurate" story — it's a "they're systematically
+        downgrading rib fractures" story. That second story is the one that matters in security too:
+        Run C often upgrades MULTI_PC into EXTREME_LATE_NIGHT (over-classifying), while the base model
+        often collapses rare/severe cases into AFTER_HOURS (under-classifying).
+      </p>
+    </div>
+
+    <div class="grid grid-2" style="margin-top: 22px;" id="cm-grid">
+      <div class="card cm-card">
+        <div class="cm-card-head"><h4>Base</h4><span class="chip chip-base"><span class="dot"></span>base</span></div>
+        <img class="cm-fig" id="cm-img-base" src="figures/confusion_core_balanced_base.png" alt="Confusion matrix — base" />
+      </div>
+      <div class="card cm-card">
+        <div class="cm-card-head"><h4>Run A</h4><span class="chip chip-A"><span class="dot"></span>r=8 α=16 lr=2e-4</span></div>
+        <img class="cm-fig" id="cm-img-A_r8_a16_lr2e4" src="figures/confusion_core_balanced_A_r8_a16_lr2e4.png" alt="Confusion matrix — Run A" />
+      </div>
+      <div class="card cm-card">
+        <div class="cm-card-head"><h4>Run B</h4><span class="chip chip-B"><span class="dot"></span>r=32 α=64 lr=2e-4</span></div>
+        <img class="cm-fig" id="cm-img-B_r32_a64_lr2e4" src="figures/confusion_core_balanced_B_r32_a64_lr2e4.png" alt="Confusion matrix — Run B" />
+      </div>
+      <div class="card cm-card">
+        <div class="cm-card-head"><h4>Run C</h4><span class="chip chip-C"><span class="dot"></span>r=8 α=16 lr=5e-5</span></div>
+        <img class="cm-fig" id="cm-img-C_r8_a16_lr5e5" src="figures/confusion_core_balanced_C_r8_a16_lr5e5.png" alt="Confusion matrix — Run C" />
+      </div>
+    </div>
+  </section>
+
+  <!-- ============== TAKEAWAYS ============== -->
+  <section id="takeaways">
+    <h2>Takeaways</h2>
+
+    <div class="grid grid-3">
+      <div class="card">
+        <div class="chip chip-A"><span class="dot"></span>RUN A — recommended</div>
+        <h3 style="margin: 12px 0 6px;">Best overall balance</h3>
+        <p style="color: var(--text-dim); font-size: 14px;">
+          71% anomaly accuracy, 71% macro F1, 75% action accuracy on core_balanced. The most boring
+          configuration — vanilla rank 8, normal LR — is the one that works. This is the model to
+          ship as the main fine-tuned PDP.
+        </p>
+      </div>
+      <div class="card">
+        <div class="chip chip-B"><span class="dot"></span>RUN B — negative result</div>
+        <h3 style="margin: 12px 0 6px;">More capacity didn't help</h3>
+        <p style="color: var(--text-dim); font-size: 14px;">
+          4× the adapter capacity, worse across the board. EXTREME recall fell from 45% (A) to 0%.
+          The extra capacity learned to over-escalate — severe-FN of 0% looks great, but over-action
+          climbs to 30%/63%.
+        </p>
+      </div>
+      <div class="card">
+        <div class="chip chip-C"><span class="dot"></span>RUN C — useful ablation</div>
+        <h3 style="margin: 12px 0 6px;">Trade rare-class recall for class collapse</h3>
+        <p style="color: var(--text-dim); font-size: 14px;">
+          Lower LR pushes EXTREME recall to 95% on core_balanced — best in class — but collapses
+          MULTI_PC into EXTREME (16 of 20). Useful evidence about the LR knob; not the model to ship.
+        </p>
+      </div>
+    </div>
+
+    <div class="callout" style="margin-top: 30px;">
+      <span class="tag">The headline claim, honestly worded</span>
+      <p>
+        Fine-tuning substantially improved schema-compliant PDP decision generation over the base
+        Qwen2.5-7B-Instruct. The baseline LoRA setting (<code>r=8, α=16, lr=2e-4</code>) produced the
+        best overall balance of anomaly classification, rare-class recall, and action accuracy.
+        Increasing LoRA rank did <i>not</i> improve this task; lowering the learning rate improved
+        EXTREME recall but caused over-prediction of that class and worse MULTI_PC behavior.
+        Because benchmark examples come from the same source as the training data, these are
+        internal comparisons rather than held-out generalization claims.
+      </p>
+    </div>
+
+    <h3 style="margin-top:40px;">Two failure modes, one root cause</h3>
+    <p>
+      DBSCAN clustering (the upstream half of this project) <i>succeeds</i> precisely because anomalies
+      are rare and isolated — density semantics turn rarity into signal. Supervised fine-tuning of
+      a language model <i>fails</i> for the same reason — with only 25 EXTREME_LATE_NIGHT training
+      examples, the model can't reliably discriminate that class from its nearest neighbors. The
+      asymmetry is the whole point: rarity is a feature for unsupervised methods and a bug for
+      supervised ones.
+    </p>
+
+    <p>
+      The honest interpretation of the LoRA sweep: parameter tuning changes the <i>shape</i> of the
+      decision boundary, but the dominant limitation is data scarcity in the critical classes.
+      Run B and Run C are not "worse" — they're showing us what each knob actually controls.
+      Run A wins because it's the only configuration where none of the knobs is turned far enough to
+      break something.
+    </p>
+  </section>
+
+  <footer class="footer">
+    Built from <code>eval/outputs/</code> · benchmark data unchanged · figures regenerated with a dark palette via <code>regenerate_figures.py</code>
+  </footer>
+</main>
+
+<script>
+// DATA — extracted from eval/outputs/<benchmark>/metrics_summary.csv
+// and the confusion_*.csv files. Metric values rounded to 3 decimals.
+
+const RUNS = ["base", "A_r8_a16_lr2e4", "B_r32_a64_lr2e4", "C_r8_a16_lr5e5"];
+const RUN_LABELS = { "base": "Base", "A_r8_a16_lr2e4": "Run A", "B_r32_a64_lr2e4": "Run B", "C_r8_a16_lr5e5": "Run C" };
+const RUN_COLORS = {
+  "base":            "rgb(110,120,135)",
+  "A_r8_a16_lr2e4":  "rgb(124,156,255)",
+  "B_r32_a64_lr2e4": "rgb(240,184,110)",
+  "C_r8_a16_lr5e5":  "rgb(255,122,122)",
+};
+const METRICS = {
+  core_balanced: {
+    base:            { anomaly_accuracy:0.40, macro_f1:0.302, rare_class_recall_avg:0.050, extreme_late_night_recall:0.00, action_accuracy:0.37, severe_false_negative_rate:1.00, over_action_rate:0.01, under_action_rate:0.62, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+    A_r8_a16_lr2e4:  { anomaly_accuracy:0.71, macro_f1:0.712, rare_class_recall_avg:0.567, extreme_late_night_recall:0.45, action_accuracy:0.75, severe_false_negative_rate:0.15, over_action_rate:0.12, under_action_rate:0.13, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+    B_r32_a64_lr2e4: { anomaly_accuracy:0.61, macro_f1:0.545, rare_class_recall_avg:0.417, extreme_late_night_recall:0.00, action_accuracy:0.66, severe_false_negative_rate:0.00, over_action_rate:0.30, under_action_rate:0.04, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+    C_r8_a16_lr5e5:  { anomaly_accuracy:0.65, macro_f1:0.601, rare_class_recall_avg:0.533, extreme_late_night_recall:0.95, action_accuracy:0.57, severe_false_negative_rate:0.20, over_action_rate:0.23, under_action_rate:0.20, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+  },
+  rare_stress: {
+    base:            { anomaly_accuracy:0.143, macro_f1:0.141, rare_class_recall_avg:0.156, extreme_late_night_recall:0.20, action_accuracy:0.029, severe_false_negative_rate:0.943, over_action_rate:0.00, under_action_rate:0.971, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+    A_r8_a16_lr2e4:  { anomaly_accuracy:0.743, macro_f1:0.464, rare_class_recall_avg:0.667, extreme_late_night_recall:0.40, action_accuracy:0.400, severe_false_negative_rate:0.086, over_action_rate:0.429, under_action_rate:0.171, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+    B_r32_a64_lr2e4: { anomaly_accuracy:0.543, macro_f1:0.324, rare_class_recall_avg:0.467, extreme_late_night_recall:0.20, action_accuracy:0.286, severe_false_negative_rate:0.029, over_action_rate:0.629, under_action_rate:0.086, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+    C_r8_a16_lr5e5:  { anomaly_accuracy:0.429, macro_f1:0.258, rare_class_recall_avg:0.511, extreme_late_night_recall:0.80, action_accuracy:0.314, severe_false_negative_rate:0.200, over_action_rate:0.457, under_action_rate:0.229, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+  },
+  screenshot_cases: {
+    base:            { anomaly_accuracy:0.40, macro_f1:0.28, rare_class_recall_avg:0.00, extreme_late_night_recall:0.00, action_accuracy:0.40, severe_false_negative_rate:1.00, over_action_rate:0.00, under_action_rate:0.60, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+    A_r8_a16_lr2e4:  { anomaly_accuracy:0.60, macro_f1:0.50, rare_class_recall_avg:0.333, extreme_late_night_recall:0.00, action_accuracy:0.60, severe_false_negative_rate:0.00, over_action_rate:0.40, under_action_rate:0.00, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+    B_r32_a64_lr2e4: { anomaly_accuracy:0.60, macro_f1:0.50, rare_class_recall_avg:0.333, extreme_late_night_recall:0.00, action_accuracy:0.40, severe_false_negative_rate:0.00, over_action_rate:0.60, under_action_rate:0.00, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+    C_r8_a16_lr5e5:  { anomaly_accuracy:0.80, macro_f1:0.733, rare_class_recall_avg:0.667, extreme_late_night_recall:1.00, action_accuracy:0.80, severe_false_negative_rate:0.00, over_action_rate:0.20, under_action_rate:0.00, exact_field_set_rate:1.0, full_schema_compliance_rate:1.0, json_validity_rate:1.0, enum_compliance_rate:1.0, hallucinated_enum_rate:0.0 },
+  },
+};
+
+// Corpus distribution (training)
+const CORPUS = [
+  { cls:"NORMAL",             n:2100, pct:70.0, role:"Data-rich",            color:"#4ade80" },
+  { cls:"AFTER_HOURS",        n:600,  pct:20.0, role:"Medium",               color:"#facc15" },
+  { cls:"MULTI_PC",           n:200,  pct:6.7,  role:"Scarce",               color:"#fb923c" },
+  { cls:"WEEKEND_BURST",      n:75,   pct:2.5,  role:"Very scarce",          color:"#f472b6" },
+  { cls:"EXTREME_LATE_NIGHT", n:25,   pct:0.8,  role:"Hallucination spot",   color:"#ef4444" },
+];
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let activeBench = "core_balanced";
+
+/* ============================================================
+   CORPUS TABLE
+   ============================================================ */
+function renderCorpusTable() {
+  const tbody = document.getElementById("corpus-table");
+  const maxN = Math.max(...CORPUS.map(c => c.n));
+  tbody.innerHTML = CORPUS.map(c => `
+    <tr>
+      <td><code>${c.cls}</code></td>
+      <td class="num">${c.n.toLocaleString()}</td>
+      <td class="num">${c.pct.toFixed(1)}%</td>
+      <td style="color: var(--text-dim);">${c.role}</td>
+      <td>
+        <div style="height: 8px; border-radius: 4px; background: var(--bg-2); overflow: hidden; max-width: 280px;">
+          <div style="height: 100%; width: ${(c.n/maxN*100).toFixed(1)}%; background: ${c.color}; opacity: 0.75;"></div>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+/* ============================================================
+   IMAGE SOURCE SWAPPING
+   ============================================================ */
+function swapFigures() {
+  document.getElementById("fig-classification").src = `figures/${activeBench}_classification_quality.png`;
+  document.getElementById("fig-safety").src         = `figures/${activeBench}_pdp_safety.png`;
+  for (const r of RUNS) {
+    const el = document.getElementById(`cm-img-${r}`);
+    if (el) el.src = `figures/confusion_${activeBench}_${r}.png`;
+  }
+}
+
+function refreshAll() {
+  swapFigures();
+  renderSummaryTable();
+  renderClassificationCallout();
+}
+
+/* ============================================================
+   SUMMARY TABLE
+   ============================================================ */
+function fmtPct(v) { return (v*100).toFixed(1) + "%"; }
+function barCell(v, max=1.0, color="var(--accent)") {
+  const w = Math.max(2, (v / max) * 100);
+  return `<span style="display:inline-flex; align-items:center; gap:8px; justify-content:flex-end;">
+    <span style="color: var(--text);">${fmtPct(v)}</span>
+    <span style="display:inline-block; height:4px; width:42px; background:var(--bg-2); border-radius:2px; overflow:hidden;">
+      <span style="display:block; height:100%; width:${w.toFixed(1)}%; background:${color}; border-radius:2px;"></span>
+    </span>
+  </span>`;
+}
+function renderSummaryTable() {
+  const m = METRICS[activeBench];
+  const tbody = document.querySelector("#summary-table tbody");
+  tbody.innerHTML = RUNS.map(r => {
+    const row = m[r];
+    const color = RUN_COLORS[r];
+    return `<tr>
+      <td><span class="chip chip-${r === 'base' ? 'base' : r[0]}"><span class="dot"></span>${RUN_LABELS[r]}</span></td>
+      <td class="num">${barCell(row.anomaly_accuracy, 1, color)}</td>
+      <td class="num">${barCell(row.macro_f1, 1, color)}</td>
+      <td class="num">${barCell(row.rare_class_recall_avg, 1, color)}</td>
+      <td class="num">${barCell(row.extreme_late_night_recall, 1, color)}</td>
+      <td class="num">${barCell(row.action_accuracy, 1, color)}</td>
+      <td class="num">${barCell(row.severe_false_negative_rate, 1, "var(--bad)")}</td>
+      <td class="num">${barCell(row.over_action_rate, 1, "var(--warn)")}</td>
+    </tr>`;
+  }).join("");
+}
+
+/* ============================================================
+   CLASSIFICATION CALLOUT (changes with benchmark)
+   ============================================================ */
+function renderClassificationCallout() {
+  const el = document.getElementById("callout-cls");
+  const blurbs = {
+    core_balanced: `<span class="tag">Reading the core_balanced result</span>
+      <p>Every fine-tuned run beats the base by a wide margin on anomaly accuracy. Run A is the only
+      configuration that hits ≥45% on every rare class (the bars stay tall, not lopsided). Run B's
+      extra capacity buys nothing — it scores worst on macro F1 of the three LoRA runs. Run C wins
+      the EXTREME column dramatically (95% vs A's 45%) but pays for it elsewhere; see the confusion
+      matrices for the mechanism.</p>`,
+    rare_stress: `<span class="tag">Reading the rare_stress result</span>
+      <p>This benchmark has no NORMAL or AFTER_HOURS support, so macro-F1 is artificially deflated
+      (it averages in the zero-support classes). Anomaly accuracy and EXTREME recall are the honest
+      numbers here. Run A leads on overall accuracy (74%); Run C still wins EXTREME recall but at a
+      sharp cost in MULTI_PC.</p>`,
+    screenshot_cases: `<span class="tag">Reading the screenshot_cases result</span>
+      <p>5 examples is statistical noise — every metric here jumps in 20-point steps. Useful only as
+      qualitative inspection. Run C catches the single EXTREME case, which is why it looks dramatic.
+      Do not generalize from this tab.</p>`,
+  };
+  el.innerHTML = blurbs[activeBench];
+}
+
+/* ============================================================
+   TAB SWITCHING
+   ============================================================ */
+function initTabs() {
+  const tabs = document.querySelectorAll("#bench-tabs button");
+  tabs.forEach(btn => {
+    btn.addEventListener("click", () => {
+      tabs.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeBench = btn.dataset.bench;
+      refreshAll();
+    });
+  });
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
+function showFatal(msg) {
+  const banner = document.createElement("div");
+  banner.style.cssText = "position:fixed;bottom:16px;right:16px;background:#1a1e26;border:1px solid #ef4444;color:#fecaca;padding:14px 18px;border-radius:10px;font-family:var(--mono);font-size:12px;max-width:380px;z-index:9999;box-shadow:0 8px 30px rgba(0,0,0,0.5);";
+  banner.textContent = msg;
+  document.body.appendChild(banner);
+}
+
+function safeBoot() {
+  try {
+    renderCorpusTable();
+    initTabs();
+    refreshAll();
+  } catch (err) {
+    console.error(err);
+    showFatal("Render error: " + (err && err.message ? err.message : String(err)));
+  }
+}
+
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", safeBoot);
+} else {
+  safeBoot();
+}
+</script>
+
+</body>
+</html>
